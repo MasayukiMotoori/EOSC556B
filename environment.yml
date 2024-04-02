@@ -1,0 +1,12 @@
+name: EOSC5556B-project
+channels:
+  - conda-forge
+dependencies:
+  - empymod
+  - geoana
+  - ipywidgets
+  - jupyterlab_widgets
+  - numpy
+  - pandas
+  - scikit-learn
+  - scipy
