@@ -1,8 +1,9 @@
-name: EOSC5556B-project
+name: EOSC556B-project
 channels:
   - conda-forge
 dependencies:
   - empymod
+  - discretize
   - geoana
   - ipywidgets
   - jupyterlab_widgets
