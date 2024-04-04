@@ -13,27 +13,64 @@ import empymod
 
 class EMIP1D:
     """
-    Function for constructring decaying harmonic exponential functions
+    Class for one dimensional inversion for about Induced Polarization from
+    Time-Domain Electromagnetic about Sea Massive Sulfide Exploration.
+    Forward modelling: empymod
+    https://empymod.emsig.xyz/en/stable/index.html
+
+    Forward modelling: SimPEG
+
+    Inversion
+        Jacobian is approximated by finite difference
+        Objective function: f = 0.5*( phid + beta* phim)
+        Data part: phid = (Wd(F(m)-dobs))**2
+        Model part: phim = (Ws(mref-minit))**2
 
     Parameters
-    ----------
 
     IP_model: String
-        Please choose "cole" or "pelton".
+        "cole":
+            res0: resistivity in low frequency
+            res8: resistivity in hig frequency
+            tau : time constant
+            c   : relaxation parameter
 
-    kernel_index: int, float
-        parameter that chances periodicity and decay rate of kernel function
+        "pelton":
+            res : resistivity
+            m   : chargeability
+            tau : time constant
+            c   : relaxation parameter
 
-    exponent: float
-        number in the exponent that controls the growth (for positive values) or decay (negative values) of our kernel function
 
-    frequency: float
-        oscillation rate of our kernel functions
+    res_air: float
+        resistivity of air
+
+    res_sea: float
+        resistivity of sea
+
+    res_seafloor: float
+        resistivity of seafloor, background
+
+    nlayers: integer
+        number of layers
+
+    tindex: boolen
+        time index to use for forward modelling and inversion
+
+    model_base: please refer empymod tutorial
+    https://empymod.emsig.xyz/en/stable/api/empymod.model.dipole.html
+        'src':  transmitter configuration
+        'rec': receiver configuration
+        'depth': depth,
+        'freqtime': t as time domain
+        'signal': ssingal wave
+        'mrec' : True
+        'verb': 0
      """
     def __init__(self, IP_model, model_base,
         res_air, res_sea, res_seafloor, nlayers, tindex,
-        resmin=1e-15, resmax=1e15, mmin = 0, mmax = 1.,
-        taumin=1e-15, taumax=1e15, cmin=0, cmax=1.
+        resmin=1e-10, resmax=1e10, mmin = 0, mmax = 1.,
+        taumin=1e-10, taumax=1e10, cmin=0, cmax=1.
         ):
         self.IP_model = IP_model
         self.model_base = model_base
@@ -50,7 +87,6 @@ class EMIP1D:
         self.taumax  = taumax
         self.cmin =cmin
         self.cmax =cmax
-
 
     def cole_cole(self,inp, p_dict):
         """Cole and Cole (1941)."""
@@ -104,6 +140,37 @@ class EMIP1D:
 
         return etaH, etaV
 
+    def ip_model(self,model_vector):
+        if self.IP_model == "cole":
+            res_0 = np.hstack([[self.res_air, self.res_sea],
+                    np.exp(model_vector[:self.nlayers]), [self.res_seafloor]])
+            res_8 = np.hstack([[self.res_air, self.res_sea],
+                    np.exp(model_vector[self.nlayers:2 * self.nlayers]), [self.res_seafloor]])
+            tau = np.hstack([[1e-3, 1e-3],
+                  np.exp(model_vector[2 * self.nlayers:3 * self.nlayers]), 1e-3])
+            c = np.hstack([[0., 0.], model_vector[3 * self.nlayers:4 * self.nlayers],[0.]])
+            cole_model = {'res': res_0, 'cond_0': 1 / res_0, 'cond_8': 1 / res_8,
+                          'tau': tau, 'c': c, 'func_eta': self.cole_cole}
+            return cole_model
+        if self.IP_model == "pelton":
+            res_0 = np.hstack([[self.res_air, self.res_sea],
+                    np.exp(model_vector[:self.nlayers]), [self.res_seafloor]])
+            m = np.hstack([[0., 0.], model_vector[self.nlayers:2 * self.nlayers],[0.]])
+            tau = np.hstack([[1e-3, 1e-3],
+                  np.exp(model_vector[2 * self.nlayers:3 * self.nlayers]), 1e-3])
+            c = np.hstack([[0., 0.], model_vector[3 * self.nlayers:4 * self.nlayers],[0.]])
+            pelton_model = {'res': res_0, 'rho_0': res_0, 'm': m,
+                            'tau': tau, 'c': c, 'func_eta': self.pelton_et_al}
+
+            return pelton_model
+
+    def plot_model(self, model, ax, name, color):
+        depth = self.model_base["depth"]
+        depth_plot = np.vstack([depth, depth]).flatten(order="F")[1:]
+        depth_plot = np.hstack([depth_plot, depth_plot[-1] * 1.5])
+        model_plot = np.vstack([model, model]).flatten(order="F")[2:]
+        return ax.plot(model_plot, depth_plot, color, label=name)
+
     def predicted_data(self, model_vector):
         if self.IP_model == "cole":
             res_0 = np.hstack([[self.res_air, self.res_sea],
@@ -129,15 +196,10 @@ class EMIP1D:
             data = empymod.bipole(res=pelton_model, **self.model_base)
         return np.array(data)[self.tindex]
 
+
     def constrain_model_vector(self,model_vector):
-        self.resmin = 1e-15
-        self.resmax = 1e15
-        self.mmin = 0
-        self.mmax = 1
-        self.taumin = 1e-15
-        self.taumax  = 1e15
-        self.cmin =0
-        self.cmax =1
+        "Parametert Projection based on provided bound information"
+
         model_vector[:self.nlayers] = np.clip(
             model_vector[:self.nlayers], np.log(self.resmin), np.log(self.resmax))
         if self.IP_model == "cole":
@@ -155,8 +217,16 @@ class EMIP1D:
         return model_vector
 
     def Japprox(self,model_vector, perturbation=0.1, min_perturbation=1e-3):
-        delta_m = min_perturbation  # np.max([perturbation*m.mean(), min_perturbation])
+        """"
+        Jacobian Approximation using finite difference
+        parameter
+        model_vector: model parameter to approximate Jacobian
+        perturbation: delta m
 
+        Output
+        Jacobian:
+        """
+        delta_m = min_perturbation  # np.max([perturbation*m.mean(), min_perturbation])
         J = []
 
         for i, entry in enumerate(model_vector):
@@ -174,6 +244,9 @@ class EMIP1D:
 
     def get_Wd(self, dobs, ratio=0.01, plateau=1e-4):
         return np.diag(1 / (np.abs(ratio*dobs) + plateau) )
+
+    def get_Ws(self):
+        return
 
     def steepest_descent(self,dobs, model_init, niter):
         model_vector = model_init
@@ -205,6 +278,23 @@ class EMIP1D:
 
     def steepest_descent_Reg_LS(self,dobs, model_init, niter, beta,
         alpha0=1, afac=0.5, atol=1e-6, gtol=1e-3, mu=1e-4):
+        """""
+        Steepest descent
+        Line search method Amijo using directional derivative
+
+        parameter
+            dobs: data
+            model_init: initial model
+            mref : applly initial model as reference model
+            niter: max iteration number
+            beta: beta for model part
+            alpha0: initial alpha for line search
+            afac: backtracking factor
+            atol: min value for alpha
+            gtol: minimum value for dradient, stopping criteria for inversion
+            mu: parameter for directional derivative
+        """
+
         model_old = model_init
         mref = model_init
         Wd = self.get_Wd(dobs)
@@ -258,62 +348,93 @@ class EMIP1D:
 
     def GaussNewton_Reg_LS(self,dobs, model_init, niter, beta,
         alpha0=1, afac=0.5, atol=1e-6, gtol=1e-3, mu=1e-4):
+        """""
+        Gauss-Newton method
+        Line search method Amijo using directional derivative
 
-        # use initial model for reference model too
+        parameter
+            dobs: data
+            model_init: initial model
+            mref : applly initial model as reference model
+            niter: max iteration number
+            beta: beta for model part
+            alpha0: initial alpha for line search
+            afac: backtracking factor
+            atol: min value for alpha
+            gtol: minimum value for dradient, stopping criteria for inversion
+            mu: parameter for directional derivative
+        """
+
         model_old = model_init
+        # applay initial model for reference mode
         mref = model_init
         # get noise part
         Wd = self.get_Wd(dobs)
-        # Prepare array for storing error and model
-        error_prg = np.zeros(niter+1)
-        model_prg = np.zeros((niter+1,model_init.shape[0]))
-
+        # Initialize object function
         r =  Wd @ (self.predicted_data(model_old) -dobs)
         phid = 0.5 * np.dot(r,r)
         phim = 0.5*  np.dot(model_old-mref,model_old-mref)
         f_old  = phid + beta*phim
+        # Prepare array for storing error and model in progress
+        error_prg = np.zeros(niter+1)
+        model_prg = np.zeros((niter+1,model_init.shape[0]))
         error_prg[0] = f_old
         model_prg[0,:] = model_old
 
         print(f'Gauss-Newton \n Initial phid = {phid:.2e} ,phim = {phim:.2e}, error= {f_old:.2e} ')
         for i in range(niter):
-            # Calculate J:Jacobian and g:gradient
+
+            # Jacobian
             J = self.Japprox(model_old)
+
+            # gradient
             g = J.T @ Wd.T @ r + beta*(model_old-mref)
+
+            # Hessian approximation
             H = J.T @ Wd.T @ Wd @ J + beta*np.identity(len(model_old))
 
-            # End inversion if gradient is smaller than tolerance
-
-            # Line search method Amijo using directional derivative
+            # model step
             dm = np.linalg.solve(H,g)
+
+            # End inversion if gradient is smaller than tolerance
             g_norm = np.linalg.norm(g,ord=2)
             if  g_norm< gtol:
                 print(f"Inversion complete since norm of gradient is small as :{g_norm :.3e} ")
                 break
+
+            # update object function
             alpha = alpha0
             model_new = self.constrain_model_vector(model_old - alpha * dm)
             r = Wd@(self.predicted_data(model_new) -dobs)
             phid = 0.5 * np.dot(r, r)
             phim = 0.5 * np.dot(model_new - mref, model_new - mref)
             f_new = phid + beta *phim
+
+            # Backtracking method using directional derivative Amijo
             directional_derivative = np.dot(g, -dm)
             while f_new >= f_old + alpha * mu * directional_derivative:
+                # backtracking
                 alpha *= afac
+                # update object function
                 model_new = self.constrain_model_vector(model_old - alpha * dm)
                 r = Wd@(self.predicted_data(model_new) - dobs)
                 phid = 0.5 * np.dot(r, r)
                 phim = 0.5 * np.dot(model_new - mref, model_new - mref)
                 f_new = phid +  beta * phim
-                if np.linalg.norm(alpha) < atol:
+                # Stopping criteria for backtrackinng
+                if alpha < atol:
                     break
+
+            # Update model
             model_old = model_new
             model_prg[i+1, :] = model_new
             f_old = f_new
             error_prg[i+1] = f_new
             k = i+1
             print(f'{k:3}, alpha:{alpha:.2e}, gradient:{g_norm:.2e}, phid:{phid:.2e}, phim:{phim:.2e}, f:{f_new:.2e} ')
-        model_prg = model_prg[:k]
+        # clip progress of model and error in inversion
         error_prg = error_prg[:k]
+        model_prg = model_prg[:k]
         return model_new,error_prg,model_prg
 
 
@@ -354,24 +475,24 @@ class EMIP1D:
                 cc_grid[i, j] = phid + beta*phim
         return mr_grid, mm_grid, cc_grid
 
-
-# #
+#
 # res_air = 2e14
 # res_sea = 1/3
-# nlayers = 1
-# #nlayers = 10
-# #layer_thicknesses = 5.
-# seabed_depth = 1000.5
-# #seabed_depth = 1000.5
-# #depth = np.hstack([np.r_[0],seabed_depth+layer_thicknesses * np.arange(nlayers)])
-# depth = np.array([0,seabed_depth])
-# t = np.logspace(-8,-2, 121)
-# tstrt = 1e-6
+# res_seafloor = 1
+# nlayers = 5
+#
+# layer_thicknesses = 5.
+# seabed_depth = 1000.1
+# depth = np.hstack([np.r_[0],seabed_depth+layer_thicknesses * np.arange(nlayers+1)])
+# t = np.logspace(-4,-2, 21)
+# tstrt = 1e-4
 # tend = 1e-2
 # tindex = (t >= tstrt) & (t <= tend)
 # tplot = t[tindex]
+#
+#
 # model_base = {
-#     'src':  [1.5,1.5,0,1.5,1000, 1000],
+#     'src':  [1.75,1.75,-1.75,1.75,1000, 1000],
 #     'rec': [0,0,1000,0,90],
 #     'depth': depth,
 #     'freqtime': t ,
@@ -379,56 +500,39 @@ class EMIP1D:
 #     'mrec' : True,
 #     'verb': 0
 # }
-# #
 #
+# EMIP =  EMIP1D("pelton",model_base,
+#     res_air,res_sea,res_seafloor,nlayers,tindex)
 #
-# EMIP =  EMIP1D(model_base,res_air,res_sea,nlayers,tindex)
+# res = 1/10 * np.ones(nlayers)
+# m_r = np.log(res)
 #
-# res_0 = 1/10 * np.ones(nlayers)
-# m_0 = np.log(res_0)
+# m = 0.6 * np.ones(nlayers)
+# m_m = m
 #
-# res_8 = 1/20 * np.ones(nlayers)
-# m_8 = np.log(res_8)
-# #tau = [0,0, 1e-4]
 # m_t = np.log(1e-4)*np.ones(nlayers)
-# #c = [0,0, 0.5]
+#
 # m_c = 0.5*np.ones(nlayers)
-# print(f'Chargeability for model_osb {(res_0 - res_8) / res_0}')
-# model_obs = np.hstack([m_0, m_8,m_t,m_c])
+#
+# model_obs = np.hstack([m_r, m_m,m_t,m_c])
 # data_clean = EMIP.predicted_data(model_obs)
-# relative_error=0
+#
+# relative_error=0.05
 # np.random.seed(0)
 # data_obs =  data_clean + np.random.randn(len(data_clean)) * relative_error * np.abs(data_clean)
 #
-# res_0 = np.ones(nlayers)
-# m_0 = np.log(res_0)
+# model_ip =  EMIP.ip_model(model_obs)
 #
-# res_8 = np.ones(nlayers)
-# m_8 = np.log(res_8)
-# #tau = [0,0, 1e-4]
-# m_t = np.log(1e-3)*np.ones(nlayers)
-# #c = [0,0, 0.5]
-# m_c = 0.6*np.ones(nlayers)
-# m = (res_0 - res_8) / res_0
-# print(f'chargeability for initial model{m}')
+# fig, ax = plt.subplots(1, 2)
 #
-# model_init = np.hstack([m_0, m_8, m_t, m_c])
-# data_init = EMIP.predicted_data(model_init)
-# niter = 10
-# beta = 1
-# #model_SD, error, model_itr = EMIP.steepest_descent_linesearch(data_obs, model_init, niter)
-# model_SD, error, model_itr = EMIP.steepest_descent_Reg_LS(
-#     dobs=data_obs, model_init=model_init, niter=niter,beta=beta,
-#     mu= 0.1
-# )
+# # plot_model_m(model_base["depth"], model_ip["res"], ax[0], "resistivity","k")
+# EMIP.plot_model(model_ip["res"], ax[0], "resistivity", "k")
+# ax[0].set_ylim([1100, 900])
+# ax[1].loglog(t, data_obs, "-", color="C0", label="data")
+# ax[1].loglog(t, -data_obs, "--", color="C0")
 #
-# data_pred = (EMIP.predicted_data(model_SD))
+# for a in ax:
+#     a.legend()
+#     a.grid()
 #
-# niter = 20
-# beta = 1
-# #model_SD, error, model_itr = EMIP.steepest_descent_linesearch(data_obs, model_init, niter)
-# model_GN, error, model_itr = EMIP.GaussNewton_Reg_LS(
-#     dobs=data_obs, model_init=model_SD, niter=niter,beta=beta,
-#     mu= 1e-4
-# )
-#
+# plt.tight_layout()
