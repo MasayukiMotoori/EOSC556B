@@ -16,7 +16,7 @@ Plotting functions about objective value grids are also prepared.
 Reference  
 empymod  
 Open-source full 3D electromagnetic modeller for 1D VTI media 
-\url{https://empymod.emsig.xyz/en/stable/gallery/tdomain/cole_cole_ip.html#sphx-glr-gallery-tdomain-cole-cole-ip-py}  
+https://empymod.emsig.xyz/en/stable/gallery/tdomain/cole_cole_ip.html#sphx-glr-gallery-tdomain-cole-cole-ip-py 
 K. Nakayama,(2019), Application of Time-Domain Electromagnetic Survey for Seafloor Polymetallic Sulphides in the Okinawa Trough
-\url{https://doi.org/10.3997/2214-4609.201902383}
+https://doi.org/10.3997/2214-4609.201902383}](https://www.earthdoc.org/content/papers/10.3997/2214-4609.201902383
 
