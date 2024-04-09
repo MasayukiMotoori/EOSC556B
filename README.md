@@ -17,7 +17,20 @@ Plotting functions about objective value grids are also prepared.
 Users are supposed to install Python file to use this code.
 Jupyternotebooks are examples of how to use.
 
-Reference  
+## Notebook Descriptions:
+Project.py: ???
+
+Project_EMIP_1D_multilayer.ipynb: ???
+
+Project_EMIP_1D_objgrid.ipynb: ???
+
+Project_EMIP_1D_test.ipynb: ???
+
+
+## Installation:
+???
+
+## References
 empymod  
 Open-source full 3D electromagnetic modeller for 1D VTI media 
 https://empymod.emsig.xyz/en/stable/gallery/tdomain/cole_cole_ip.html#sphx-glr-gallery-tdomain-cole-cole-ip-py   
