@@ -21,8 +21,23 @@ Jupyter note books demonstrate impact of IP parameter,
 https://empymod.emsig.xyz/en/stable/manual/installation.html
 2. Import class "EMIP1D" from python file and run jupyter notebook
 
-## Reference  
-"empymod"
+
+## Notebook Descriptions:
+Project.py: ???
+
+Project_EMIP_1D_multilayer.ipynb: ???
+
+Project_EMIP_1D_objgrid.ipynb: ???
+
+Project_EMIP_1D_test.ipynb: ???
+
+
+## Installation:
+???
+
+## References
+empymod  
+
 Open-source full 3D electromagnetic modeller for 1D VTI media 
 https://empymod.emsig.xyz/en/stable/gallery/tdomain/cole_cole_ip.html#sphx-glr-gallery-tdomain-cole-cole-ip-py   
 "TDEM survey on Deep seamassive sulfide and IP impacts on data"
