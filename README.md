@@ -6,8 +6,9 @@ Python code about Foward simulation and Inversion.
 Induced Polarization(IP) models are based on cole-cole or pelton model.
 Model are based on deep Sea Massive Sulfide exploration inspired by JOGMEC survey.
 
-Steepest descend and Gauss-Newton method are available for optimization.
+Foward simulation uses empymod. (See the instruction bellow.)
 Jacobian is approximated by finite difference.
+Steepest descend and Gauss-Newton method are available for optimization.
 Jupyter note books demonstrate impact of IP parameter,
  one-dimensional inversion and objective function grids. 
 
