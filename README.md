@@ -21,19 +21,25 @@ Jupyter note books demonstrate impact of IP parameter,
 https://empymod.emsig.xyz/en/stable/manual/installation.html
 2. Import class "EMIP1D" from python file and run jupyter notebook
 
-
 ## Notebook Descriptions:
-Project.py: ???
+1\_test
 
-Project_EMIP_1D_multilayer.ipynb: ???
+Test about forward modelling method. 
+Comparison between empymod and some analytical solution.
 
-Project_EMIP_1D_objgrid.ipynb: ???
+2\_IP parameter impact on forward simulation
 
-Project_EMIP_1D_test.ipynb: ???
+Notebooks to explore IP parameter impact on forward simulation. \\
+This demonstrates how each of 4 parameters, resistivity, changeability, \\
+time constant, relaxation parameter impacts on simulation. \\
+You can see a slight difference between the Cole-Cole and the Pelton model.
 
+3\_object function
 
-## Installation:
-???
+Inversion is an ill-posed problem and there is a non-uniqueness. This notebook performs one-layer inversion and plots the objective function grid about all model parameters during the inversion process(inversion trajectory). r08/rm and tc grids are about resistivity/changeability and time-constant/relaxation parameters respectively. This notebook shows how inversion changes model parameters during iteration. 
+This notebook studies the range of non-uniqueness and ill-conditioned problems about this IP parameter inversion in TDEM.
+
+An example of source localization problems in two-dimensional space may help us understand this idea. Sub-folder contains additional notebooks and figures about this example which was an assignment of CPSC406: Computational Optimization.
 
 ## References
 empymod  
