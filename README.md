@@ -41,6 +41,10 @@ This notebook studies the range of non-uniqueness and ill-conditioned problems a
 
 An example of source localization problems in two-dimensional space may help us understand this idea. Sub-folder contains additional notebooks and figures about this example which was an assignment of CPSC406: Computational Optimization.
 
+4_\multilayer
+
+Notebooks about multilayer inversion.
+
 ## References
 empymod  
 
