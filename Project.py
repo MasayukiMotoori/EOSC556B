@@ -138,15 +138,43 @@ class EMIP1D:
 
         PA_plot = 0
         if PA_plot == 1:
-            freq = p_dict['freq']
-            amplitude = np.abs(rhoH)[:, 2]
-            phase = np.angle(rhoH)[:, 2]
+            frq_pl = p_dict['freq']
+            amp_pl = np.abs(rhoH)[:, 2]
+            phs_pl = np.angle(rhoH)[:, 2]
+            fig, ax1 = plt.subplots(figsize=(8, 5))
 
-            csv_colecole = np.array([freq, amplitude, phase]).T
-            with open('EOSC555_Rep_PA_Pelton.csv', 'w', newline='') as csvfile:
-                writer = csv.writer(csvfile)
-                writer.writerow(['freq', 'amplitude', 'phase'])  # Write header row
-                writer.writerows(csv_colecole)
+            # Plotting magnitude on the left y-axis (log scale)
+            ax1.set_xscale('log')
+            ax1.set_ylabel('Amplitude')
+            ax1.set_xlabel('Frequency')
+            ax1.semilogx(frq_pl, amp_pl, 'r',label='Amplitude')  # Blue line for magnitude
+            ax1.set_ylim(bottom=0)  # Set the lower limit of the y-axis to 0
+
+            # Enable grid only for x-axis
+            ax1.xaxis.grid(True)
+            ax1.yaxis.grid(False)  # Disable grid for y-axis
+
+            # Creating a second y-axis for phase on the right
+            ax2 = ax1.twinx()
+            ax2.set_ylabel('Phase (radians)')
+            ax2.semilogx(frq_pl, phs_pl,  'b-',label='phase')  # Red line for phase
+            ax2.invert_yaxis()
+
+            # Combine legends from both axes
+            lines1, labels1 = ax1.get_legend_handles_labels()
+            lines2, labels2 = ax2.get_legend_handles_labels()
+            lines = lines1 + lines2
+            labels = labels1 + labels2
+            ax1.legend(lines, labels, loc='best')
+
+            plt.title('Phase Amplitude Plot-Pelton model')
+            plt.savefig('Pelton.png', dpi=300)
+            plt.show()
+            # csv_colecole = np.array([freq, amplitude, phase]).T
+            # with open('EOSC555_Rep_PA_Pelton.csv', 'w', newline='') as csvfile:
+            #     writer = csv.writer(csvfile)
+            #     writer.writerow(['freq', 'amplitude', 'phase'])  # Write header row
+            #     writer.writerows(csv_colecole)
 
         return etaH, etaV
 
@@ -200,12 +228,12 @@ class EMIP1D:
                                 'tau': tau, 'c': c, 'func_eta': self.pelton_et_al}
                 return pelton_model
 
-    def plot_model(self, model, ax, name, color):
+    def plot_model(self, model, ax, name, color, linewidth):
         depth = self.model_base["depth"]
         depth_plot = np.vstack([depth, depth]).flatten(order="F")[1:]
         depth_plot = np.hstack([depth_plot, depth_plot[-1] * 1.5])
         model_plot = np.vstack([model, model]).flatten(order="F")[2:]
-        return ax.plot(model_plot, depth_plot, color, label=name)
+        return ax.plot(model_plot, depth_plot, color, label=name,  linewidth=linewidth)
 
     def predicted_data(self, model_vector):
 
@@ -808,7 +836,7 @@ class EMIP1D:
         return tc_grid, mt_grid, mc_grid
 
 
-    def plot_IP_par(self,mvec, label="", color="orange", ax=None):
+    def plot_IP_par(self,mvec, label="", color="orange", linewidth=1.0,ax=None):
         """"
         Return four plots about four IP parameters on given ax.
         mvec: model vector
@@ -823,14 +851,16 @@ class EMIP1D:
         model = self.get_ip_model(mvec)
 
         # plot_model_m(model_base["depth"], model_ip["res"], ax[0], "resistivity","k")
-        self.plot_model(model["res"], ax[0], label, color=color)
+        self.plot_model(model["res"], ax[0], label, color=color, linewidth=linewidth)
         if self.IP_model == "cole":
-            self.plot_model(1 - model["cond_0"] / model["cond_8"], ax[1], label, color=color)
+            self.plot_model(1 - model["cond_0"] / model["cond_8"], ax[1], label, color=color, linewidth=linewidth)
         else:
-            self.plot_model(model["m"], ax[1], label, color=color)
+            self.plot_model(model["m"], ax[1], label, color=color, linewidth=linewidth)
 
-        self.plot_model(model["tau"], ax[2], label, color=color)
-        self.plot_model(model["c"]  , ax[3], label, color=color)
+        self.plot_model(model["tau"], ax[2], label, color=color, linewidth=linewidth)
+
+        self.plot_model(model["c"]  , ax[3], label, color=color, linewidth=linewidth)
+
         ax[0].set_title("model_resistivity(ohm-m)")
         ax[1].set_title("model_changeability")
         ax[2].set_title("model_timeconstant(sec)")
@@ -963,21 +993,21 @@ class psuedolog():
 
         return ax
 
+#
 # t = np.logspace(-8,-2, 121)
-# tstrt = 1e-6
+# tstrt = 1e-4
 # tend = 1e-2
 # tindex = (t >= tstrt) & (t <= tend)
-# tplot = t[tindex]
+# tplot = t[tindex]*1e3
+#
 # res_air = 2e14
 # res_sea = 1/3
 # nlayers = 1
 # btm_fix= True
 # res_btm = 1
-# layer_thicknesses = 25.
+# layer_thicknesses = 40.
 # seabed_depth = 1000.1
 # depth = np.hstack([np.r_[0],seabed_depth+layer_thicknesses * np.arange(nlayers+1)])
-#
-#
 # model_base = {
 #     'src':  [1.75,1.75,-1.75,1.75,1000, 1000],
 #     'rec': [0,0,1000,0,90],
@@ -987,74 +1017,28 @@ class psuedolog():
 #     'mrec' : True,
 #     'verb': 0
 # }
+#
 # EMIP =  EMIP1D(IP_model="pelton", model_base=model_base,
 #     res_air=res_air, res_sea=res_sea, nlayers=nlayers,tindex=tindex,
 #                btm_fix=btm_fix,res_btm=res_btm)
 #
-#
 # res = 0.2
 # mvec_r = np.log(res)
-# mvec_m = 0.0
-# mvec_t = np.log(1e-3)
+# chg = 0.0
+# mvec_m = chg
+# tau=1e-3
+# mvec_t = np.log(tau)
 # mvec_c = 0.5
 # mvec_ref = np.hstack([mvec_r, mvec_m, mvec_t, mvec_c])
 # data_ref = EMIP.predicted_data(mvec_ref)
-# res1 = 0.15
-# mvec_r1 = np.hstack([np.log(res1), mvec_m, mvec_t, mvec_c])
-# data_r1 = EMIP.predicted_data(mvec_r1)
-# res2 = 0.12
-# mvec_r2 = np.hstack([np.log(res2), mvec_m, mvec_t, mvec_c])
-# data_r2 = EMIP.predicted_data(mvec_r2)
-# res3 = 0.1
-# mvec_r3 = np.hstack([np.log(res3), mvec_m, mvec_t, mvec_c])
-# data_r3 = EMIP.predicted_data(mvec_r3)
-# data_plot = psuedolog(posmax=1e4, negmax=1e-1, a=1e-4, b=0.2)
-# fig = plt.figure(figsize=(12, 8))
-# gs = gridspec.GridSpec(2, 4)
-# ax = [None] * 6
-# ax[4] = data_plot.pl_plot(tplot, data_ref, ax=ax[4], color="k", label=f"res:{res :.2f}")
-# ax[4] = data_plot.pl_plot(tplot, data_r1 , ax=ax[4], color="g", label=f"res:{res1:.2f}")
-# ax[4] = data_plot.pl_axes(ax[4])
-
-# res = 1/10 * np.ones(nlayers)
-# #res = np.r_[0.1,0.1,0.5,0.5,1.0]
-# mvec_r = np.log(res)
 #
-# mvec_m = 0.4 * np.ones(nlayers)
-# #mvec_m = np.r_[0.6,0.6,0.2,0.2,0.0]
-# mvec_t = np.log(1e-4)*np.ones(nlayers)
-# mvec_c = 0.5*np.ones(nlayers)
-#
-# mvec_obs = np.hstack([mvec_r, mvec_m, mvec_t, mvec_c])
-# data_clean = EMIP.predicted_data(mvec_obs)
-#
-# relative_error=0.00
-# np.random.seed(0)
-# data_obs =  data_clean + np.random.randn(len(data_clean)) * relative_error * np.abs(data_clean)
-#
-# res = np.ones(nlayers)
-# mvec_r = np.log(res)
-# mvec_m = 0.00* np.ones(nlayers)
-# mvec_t = np.log(1e-3)*np.ones(nlayers)
-# mvec_c = 0.6*np.ones(nlayers)
-# mvec_init = np.hstack([mvec_r, mvec_m, mvec_t, mvec_c])
-# data_init = EMIP.predicted_data(mvec_init)
-#
-# niter = 20
-# beta = 1
-# alphas = 0.001/(layer_thicknesses**2)
-# alphax = 1
-# mvec_pred, error, model_itr = EMIP.GaussNewton_smooth(
-#     dobs=data_obs, model_init=mvec_init, niter=niter,beta=beta,
-#     alphas = alphas, alphax = alphax
-# )
-
-#model_SD, error, model_itr = EMIP.steepest_descent_linesearch(data_obs, model_init, niter)
-# mvec_pred, error, model_itr = EMIP.GaussNewton_Reg_LS(
-#     dobs=data_obs, model_init=mvec_init, niter=niter,beta=beta,
-#     atol=1e-14, mu= 1e-4
-# )
-
-
-
+# chg1 = 0.1
+# mvec_m1 = np.hstack([mvec_r, chg1, mvec_t, mvec_c])
+# data_m1 = EMIP.predicted_data(mvec_m1)
+# chg2 = 0.3
+# mvec_m2 = np.hstack([mvec_r, chg2, mvec_t, mvec_c])
+# data_m2 = EMIP.predicted_data(mvec_m2)
+# chg3 = 0.6
+# mvec_m3 = np.hstack([mvec_r, chg3, mvec_t, mvec_c])
+# data_m3 = EMIP.predicted_data(mvec_m3)
 
