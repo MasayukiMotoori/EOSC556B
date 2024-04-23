@@ -22,26 +22,30 @@ https://empymod.emsig.xyz/en/stable/manual/installation.html
 2. Import class "EMIP1D" from python file and run jupyter notebook
 
 ## Notebook Descriptions:
-1\_test
+1_test
 
 Test about forward modelling method. 
 Comparison between empymod and some analytical solution.
 
-2\_IP parameter impact on forward simulation
+2_IP parameter impact on forward simulation
 
 Notebooks to explore IP parameter impact on forward simulation. \\
 This demonstrates how each of 4 parameters, resistivity, changeability, \\
 time constant, relaxation parameter impacts on simulation. \\
 You can see a slight difference between the Cole-Cole and the Pelton model.
 
-3\_object function
+3_objective function
 
 Inversion is an ill-posed problem and there is a non-uniqueness. This notebook performs one-layer inversion and plots the objective function grid about all model parameters during the inversion process(inversion trajectory). r08/rm and tc grids are about resistivity/changeability and time-constant/relaxation parameters respectively. This notebook shows how inversion changes model parameters during iteration. 
 This notebook studies the range of non-uniqueness and ill-conditioned problems about this IP parameter inversion in TDEM.
 
 An example of source localization problems in two-dimensional space may help us understand this idea. Sub-folder contains additional notebooks and figures about this example which was an assignment of CPSC406: Computational Optimization.
 
-4_\multilayer
+4_NoIP
+What happens if inversion with only resistivity is applied to the previous data. Is it possible to invert data without IP parameter when data does not show negative response? This notebooks create data using IP parameter while perform Inversion using only resistivity.
+
+5_multilayer
+Demonstrate deeep see floor massive sulphide exploration model.
 
 Notebooks about multilayer inversion.
 
