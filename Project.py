@@ -25,35 +25,24 @@ class EMIP1D:
                    bottom fix is also available
 
     model vector : parameter used for inversion
-                   assuming IP parameter for sea massive sulfide
-
-    Inversion
-        Jacobian is approximated by finite difference
-        Objective function: f = 0.5*( phid + beta* phim)
-        Data part: phid = (Wd(F(m)-dobs))**2
-        Model part: see each inversion code
-
-        steepest descent with constant step size
-        steepest descent with regularization and line searching
-        Gauss-Newton with regularization and line searching
-        Gauss-Newton with smoothing regularization
-
+                   assuming IP parameter for seafloor hydrothermal deposit
+                   
     IP_model: String
         "cole":
             res0: resistivity in low frequency
             res8: resistivity in hig frequency
             tau : time constant
-            c   : relaxation parameter
+            c   : exponent c
 
         "pelton":
             res : resistivity
-            chg   : chargeability
+            chg : chargeability
             tau : time constant
-            c   : relaxation parameter
+            c   : exponent c
 
-    res_air: resistivity of air
+    res_air: resistivity of air to fix during inversion
 
-    res_sea: resistivity of sea
+    res_sea: resistivity of sea to fix during inversion
 
     nlayers: integer, number of layers
 
@@ -63,7 +52,8 @@ class EMIP1D:
         None: no fix (default)
         True: fix, recommended when creating object function grid
 
-    res_btm: resistivity of bottom layer, eligible when btm_fix is 1
+    res_btm: resistivity of bottom layer to fix during inversion
+             eligible when btm_fix is 1
 
     model_base: please refer empymod tutorial
     https://empymod.emsig.xyz/en/stable/api/empymod.model.dipole.html
@@ -78,8 +68,9 @@ class EMIP1D:
     def __init__(self, IP_model, model_base,
                  res_air, res_sea, nlayers, tindex,
                  btm_fix=None, res_btm=None,
-                 resmin=1e-6 , resmax=1e3, chgmin=1e-5, chgmax=0.99,
-                 taumin=1e-6, taumax=1e-2, cmin= 0.4, cmax=0.8
+                 resmin=1e-3 , resmax=1e6, chgmin=1e-5, chgmax=0.99,
+                 taumin=1e-6, taumax=1e-2, cmin= 0.4, cmax=0.8,
+                 Wd = None, Ws=None, Wx=None, Hessian=None, Jacobian=None
                  ):
         self.IP_model = IP_model
         self.model_base = model_base
@@ -97,6 +88,11 @@ class EMIP1D:
         self.taumax = taumax
         self.cmin = cmin
         self.cmax = cmax
+        self.Wd = Wd
+        self.Ws = Ws
+        self.Wx = Wx
+        self.Hessian = Hessian
+        self.Jacobian = Jacobian
 
     def cole_cole(self, inp, p_dict):
         """Cole and Cole (1941)."""
@@ -228,39 +224,17 @@ class EMIP1D:
                                 'tau': tau, 'c': c, 'func_eta': self.pelton_et_al}
                 return pelton_model
 
-    def plot_model(self, model, ax, name, color, linewidth):
+    def plot_model(self, model, ax, color, label="model", linewidth=1):
         depth = self.model_base["depth"]
         depth_plot = np.vstack([depth, depth]).flatten(order="F")[1:]
         depth_plot = np.hstack([depth_plot, depth_plot[-1] * 1.5])
         model_plot = np.vstack([model, model]).flatten(order="F")[2:]
-        return ax.plot(model_plot, depth_plot, color, label=name,  linewidth=linewidth)
+        return ax.plot(model_plot, depth_plot, color, label=label,  linewidth=linewidth)
 
     def predicted_data(self, model_vector):
 
         ip_model = self.get_ip_model(model_vector)
         data = empymod.bipole(res=ip_model, **self.model_base)
-        # if self.IP_model == "cole":
-        #     res_0 = np.hstack([[self.res_air, self.res_sea],
-        #             np.exp(model_vector[:self.nlayers]), [self.res_btm]])
-        #     res_8 = np.hstack([[self.res_air, self.res_sea],
-        #             np.exp(model_vector[self.nlayers:2 * self.nlayers]), [self.res_btm]])
-        #     tau = np.hstack([[1e-3, 1e-3],
-        #           np.exp(model_vector[2 * self.nlayers:3 * self.nlayers]), 1e-3])
-        #     c = np.hstack([[0., 0.], model_vector[3 * self.nlayers:4 * self.nlayers],[0.]])
-        #     cole_model = {'res': res_0, 'cond_0': 1 / res_0, 'cond_8': 1 / res_8,
-        #                   'tau': tau, 'c': c, 'func_eta': self.cole_cole}
-        #     data = empymod.bipole(res=cole_model, **self.model_base)
-        # if self.IP_model == "pelton":
-        #     res_0 = np.hstack([[self.res_air, self.res_sea],
-        #             np.exp(model_vector[:self.nlayers]), [self.res_btm]])
-        #     m = np.hstack([[0., 0.], model_vector[self.nlayers:2 * self.nlayers],[0.]])
-        #     tau = np.hstack([[1e-3, 1e-3],
-        #           np.exp(model_vector[2 * self.nlayers:3 * self.nlayers]), 1e-3])
-        #     c = np.hstack([[0., 0.], model_vector[3 * self.nlayers:4 * self.nlayers],[0.]])
-        #     pelton_model = {'res': res_0, 'rho_0': res_0, 'm': m,
-        #                     'tau': tau, 'c': c, 'func_eta': self.pelton_et_al}
-        #
-        #     data = empymod.bipole(res=pelton_model, **self.model_base)
         return np.array(data)[self.tindex]
 
     def constrain_model_vector(self, model_vector):
@@ -297,7 +271,7 @@ class EMIP1D:
         mvec = mvec_tmp.copy()
         nlayers = self.nlayers
         a_r0  = np.r_[ 1., 0.]
-        a_r8  = np.r_[ 0., 1.]
+        # a_r8  = np.r_[ 0., 1.]
         a_r08 = np.r_[-1., 1.]
         a = np.r_[1]
 
@@ -308,11 +282,12 @@ class EMIP1D:
                 r08_tmp = np.r_[r0_tmp, r8_tmp]
                 r08_prj = r08_tmp
                 for i in range(maxitr):
-                    r08_prj = self.projection_halfspace( a_r0, r08_prj,   np.log(self.resmax))
-                    r08_prj = self.projection_halfspace(-a_r0, r08_prj, -np.log(self.resmin))
-                    r08_prj = self.projection_halfspace( a_r8, r08_prj,   np.log(self.resmax))
-                    r08_prj = self.projection_halfspace(-a_r8, r08_prj, -np.log(self.resmin))
-                    r08_prj = self.projection_halfspace(a_r08, r08_prj, 0)
+                    r08_prj = self.projection_halfspace(  a_r0, r08_prj,  np.log(self.resmax))
+                    r08_prj = self.projection_halfspace( -a_r0, r08_prj, -np.log(self.resmin))
+                    # r08_prj = self.projection_halfspace( a_r8, r08_prj,   np.log(self.resmax))
+                    # r08_prj = self.projection_halfspace(-a_r8, r08_prj, -np.log(self.resmin))
+                    r08_prj = self.projection_halfspace(-a_r08, r08_prj, -np.log(1-self.chgmax))
+                    r08_prj = self.projection_halfspace( a_r08, r08_prj,  np.log(1-self.chgmin))
                     if np.linalg.norm(r08_prj - r08_tmp) <= tol:
                         break
                     r08_tmp = r08_prj
@@ -343,16 +318,8 @@ class EMIP1D:
 
 
     def Japprox(self, model_vector, perturbation=0.1, min_perturbation=1e-3):
-        """"
-        Jacobian Approximation using finite difference
-        parameter
-        model_vector: model parameter to approximate Jacobian
-        perturbation: delta m
-
-        Output
-        Jacobian:
-        """
         delta_m = min_perturbation  # np.max([perturbation*m.mean(), min_perturbation])
+#        delta_m = perturbation  # np.max([perturbation*m.mean(), min_perturbation])
         J = []
 
         for i, entry in enumerate(model_vector):
@@ -372,28 +339,91 @@ class EMIP1D:
 
         return np.vstack(J).T
 
-    def get_Wd(self,dobs, dp=1, ratio=0.01, plateau=1e-5):
+    def get_Wd(self, dobs, dp=1, ratio=0.01, plateau=1e-5):
         """
-        Retrun Wd based on
-        std = (|data|*ratio)^dp + plateau
-        Wd: diag(std^-1)
+        Calculate and return a diagonal matrix Wd based on a standard deviation std.
+
+        The standard deviation std is calculated as follows: (abs(dobs * ratio) ^ dp) + plateau.
+        The diagonal matrix Wd is then calculated as the inverse of the standard deviation std.
+
+        Parameters
+        ----------
+        dobs : ndarray
+            The observed data.
+        dp : int, optional
+            The power to which the absolute value of dobs * ratio is raised (default is 1).
+        ratio : float, optional
+            A constant used in the calculation of the standard deviation (default is 0.01).
+        plateau : float, optional
+            A small constant added to avoid division by zero (default is 1e-5).
+
+        Returns
+        -------
+        ndarray
+            A diagonal matrix with the elements of 1 / std on the main diagonal.
         """
         std = np.abs(dobs * ratio) ** dp + plateau
         return np.diag(1 / std)
 
+    def set_Wd(self, dobs, dp=1, ratio=0.01, plateau=1e-5 ):
+        """
+        Calculate a diagonal matrix Wd based on a standard deviation std and set it as an attribute of the class instance.
+
+        The standard deviation std is calculated as follows: (abs(dobs * ratio) ^ dp) + plateau.
+        The diagonal matrix Wd is then calculated as the inverse of the standard deviation std.
+
+        Parameters
+        ----------
+        dobs : ndarray
+            The observed data.
+        dp : int, optional
+            The power to which the absolute value of dobs * ratio is raised (default is 1).
+        ratio : float, optional
+            A constant used in the calculation of the standard deviation (default is 0.01).
+        plateau : float, optional
+            A small constant added to avoid division by zero (default is 1e-5).
+
+        Returns
+        -------
+        None
+        """
+        std = np.abs(dobs * ratio) ** dp + plateau
+        self.Wd = np.diag(1 / std)
+        return
 
     def get_Ws(self):
         nx = 4*self.nlayers
-        # depth = self.model_base["depth"]
-        # if self.btm_fix == False:
-        #     dx = np.hstack([np.diff(depth)[1:], 0])
-        # else:
-        #     dx = np.diff(depth)[1:]
-        # dxip = np.hstack((dx, dx, dx, dx))
-        # return np.diag(np.sqrt(dxip))
         return np.diag(np.ones(nx))
 
+    def set_Ws(self):
+        nx = 4*self.nlayers
+        self.Ws = np.diag(np.ones(nx))
+        return
+
     def get_Wx(self):
+        """
+        Calculate a matrix Wx that represents the smoothness constraint for a model with multiple layers 
+        and set it as an attribute of the class instance.
+
+        The method first initializes Wx as a zero matrix of size (4 * nx, 4 * ny), where nx is the number of layers minus one 
+        and ny is the number of layers.
+
+        If the number of layers is one, the method prints a message "No smoothness for one layer model", 
+        sets Wx as a zero matrix of size (4,4), and returns.
+
+        For models with more than one layer, the method constructs Wx such that it has -1 on the main diagonal 
+        and 1 on the diagonal above it, for each block of size nx by ny in Wx.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        ndarray
+            A matrix that represents the smoothness constraint for a model with multiple layers.
+        """
+
         nx = self.nlayers - 1
         ny = self.nlayers
         Wx = np.zeros((4 * nx, 4 * ny))
@@ -401,38 +431,47 @@ class EMIP1D:
             print("No smoothness for one layer model")
             Wx = np.zeros((4,4))
             return Wx
-        # else:
-        #     elm1 = (1 / dx1)
-        #     elm2 = np.sqrt(dx)
-        #
         for i in range(4):
             Wx[i * nx:(i + 1) * nx, i * ny:(i + 1) * ny - 1] = -np.diag(np.ones(nx))
             Wx[i * nx:(i + 1) * nx, i * ny + 1:(i + 1) * ny] += np.diag(np.ones(nx))
-
-        # depth = self.model_base["depth"]
-        # nx = self.nlayers - 1
-        # ny = self.nlayers
-        # Wx = np.zeros((4 * nx, 4 * ny))
-        # dx = np.diff(depth)[1:]
-        # dx1 = dx[:-1]
-        # if self.nlayers == 1:
-        #     print("No smoothness for one layer model")
-        #     Wx = np.zeros((4,4))
-        #     return Wx
-        #
-        # if self.btm_fix == False:
-        #     elm1 = np.hstack([1 / dx1, 0])
-        #     elm2 = np.hstack([np.sqrt(dx), 0])
-        # else:
-        #     elm1 = (1 / dx1)
-        #     elm2 = np.sqrt(dx)
-        #
-        # for i in range(4):
-        #     Wx[i * nx:(i + 1) * nx, i * ny:(i + 1) * ny - 1] = -np.diag(elm1)
-        #     Wx[i * nx:(i + 1) * nx, i * ny + 1:(i + 1) * ny] += +np.diag(elm1)
-        # elm2ip = np.hstack((elm2, elm2, elm2, elm2))
-        # Wx = Wx @ np.diag(elm2ip)
         return Wx
+
+    def set_Wx(self):
+        """
+        Calculate a matrix Wx that represents the smoothness constraint for a model with multiple layers 
+        and set it as an attribute of the class instance.
+
+        The method first initializes Wx as a zero matrix of size (4 * nx, 4 * ny), where nx is the number of layers minus one 
+        and ny is the number of layers.
+
+        If the number of layers is one, the method prints a message "No smoothness for one layer model", 
+        sets Wx as a zero matrix of size (4,4), and returns.
+
+        For models with more than one layer, the method constructs Wx such that it has -1 on the main diagonal 
+        and 1 on the diagonal above it, for each block of size nx by ny in Wx.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
+
+        nx = self.nlayers - 1
+        ny = self.nlayers
+        Wx = np.zeros((4 * nx, 4 * ny))
+        if self.nlayers == 1:
+            print("No smoothness for one layer model")
+            Wx = np.zeros((4,4))
+            self.Wx = Wx
+            return
+        for i in range(4):
+            Wx[i * nx:(i + 1) * nx, i * ny:(i + 1) * ny - 1] = -np.diag(np.ones(nx))
+            Wx[i * nx:(i + 1) * nx, i * ny + 1:(i + 1) * ny] += np.diag(np.ones(nx))
+        self.Wx = Wx
+        return
 
     def get_Wxx(self):
 
@@ -450,8 +489,6 @@ class EMIP1D:
         Wxx = np.diag(-2 * e) + np.diag(eup[:-1], 1) + np.diag(edwn[1:], -1)
 
         return Wxx
-
-
 
     def steepest_descent(self, dobs, model_init, niter):
         model_vector = model_init
@@ -481,124 +518,81 @@ class EMIP1D:
             print(f' i= {i:3d}, phid= {f:.3e} ')
         return model_vector, error, model_itr
 
-    def steepest_descent_Reg_LS(self, dobs, model_init, niter, Wd, beta,
-                                alpha0=1, afac=0.5, atol=1e-6, gtol=1e-3, mu=1e-4):
-        """""
-        Steepest descent
-        Line search method Amijo using directional derivative
 
-        parameter
-            dobs: data
-            model_init: initial model
-            mref : applly initial model as reference model
-            niter: max iteration number
-            beta: beta for model part
-            alpha0: initial alpha for line search
-            afac: backtracking factor
-            atol: min value for alpha
-            gtol: minimum value for dradient, stopping criteria for inversion
-            mu: parameter for directional derivative
+    def Gradient_Descent(self, dobs, mvec_init, niter, beta, alphas, alphax,
+            s0=1, sfac=0.5, stol=1e-6, gtol=1e-3, mu=1e-4, ELS=True, BLS=True ):
         """
+        Perform the Gradient Descent algorithm for optimization.
 
-        model_old = model_init
-        mref = model_init
+        Parameters
+        ----------
+        dobs : ndarray
+            The observed data.
+        mvec_init : ndarray
+            The initial model vector.
+        niter : int
+            The number of iterations to perform.
+        beta : float
+            The beta parameter for the algorithm.
+        alphas : float
+            The alpha_s parameter for the algorithm.
+        alphax : float
+            The alpha_x parameter for the algorithm.
+        s0 : float, optional
+            The initial step size (default is 1).
+        sfac : float, optional
+            The step size reduction factor (default is 0.5).
+        stol : float, optional
+            The step size tolerance (default is 1e-6).
+        gtol : float
+            The stopping criteria for the norm of the gradient.
+        mu : float, optional
+            The mu parameter for the algorithm (default is 1e-4).
+        ELS : bool, optional
+            Whether to use exact line search (default is True).
+        BLS : bool, optional
+            Whether to use backtracking line search (default is True).
+
+        Returns
+        -------
+        mvec_new : ndarray
+            The optimized model vector.
+        error_prg : ndarray
+            The progress of the error.
+        mvec_prg : ndarray
+            The progress of the model vector.
+
+        """
+        Wd = self.Wd
+        Ws = self.Ws
+        Wx = self.Wx
+
+        mvec_old = mvec_init
+        mvec_new = None
+        mref = mvec_init
         error_prg = np.zeros(niter + 1)
-        model_prg = np.zeros((niter + 1, model_init.shape[0]))
-        r = Wd @ (self.predicted_data(model_old) - dobs)
-        phid = 0.5 * np.dot(r, r)
-        phim = 0.5 * np.dot(model_old - mref, model_old - mref)
+        mvec_prg = np.zeros((niter + 1, mvec_init.shape[0]))
+        rd = Wd @ (self.predicted_data(mvec_old) - dobs)
+        phid = 0.5 * np.dot(rd, rd)
+        rms = 0.5 * np.dot(Ws@(mvec_old - mref), Ws@(mvec_old - mref))
+        rmx = 0.5 * np.dot(Wx @ mvec_old, Wx @ mvec_old)
+        phim = alphas * rms + alphax * rmx
         f_old = phid + beta * phim
+        k = 0
         error_prg[0] = f_old
-        model_prg[0, :] = model_old
-        print(f'Steepest Descent \n Initial phid = {phid:.2e} ,phim = {phim:.2e}, error= {f_old:.2e} ')
+        mvec_prg[0, :] = mvec_old
+        print(f'Gradient Descent \n Initial phid = {phid:.2e} ,phim = {phim:.2e}, error= {f_old:.2e} ')
         for i in range(niter):
             # Calculate J:Jacobian and g:gradient
-            J = self.Japprox(model_old)
-            g = J.T @ Wd.T @ Wd @ r + beta * (model_old - mref)
-            # End inversion if gradient is smaller than tolerance
-            g_norm = np.linalg.norm(g, ord=2)
-            if g_norm < gtol:
-                print(f"Inversion complete since norm of gradient is small as :{g_norm :.3e} ")
-                break
-
-            # Line search method Amijo using directional derivative
-            alpha = alpha0
-            directional_derivative = np.dot(g, -g)
-
-            model_new = self.constrain_model_vector(model_old - alpha * g)
-            r = Wd @ (self.predicted_data(model_new) - dobs)
-            phid = 0.5 * np.dot(r, r)
-            phim = 0.5 * np.dot(model_new - mref, model_new - mref)
-            f_new = phid + beta * phim
-            while f_new >= f_old + alpha * mu * directional_derivative:
-                alpha *= afac
-                model_new = self.constrain_model_vector(model_old - alpha * g)
-                r = Wd @ (self.predicted_data(model_new) - dobs)
-                phid = 0.5 * np.dot(r, r)
-                phim = 0.5 * np.dot(model_new - mref, model_new - mref)
-                f_new = phid + beta * phim
-                if np.linalg.norm(alpha) < atol:
-                    break
-            model_old = model_new
-            model_prg[i + 1, :] = model_new
-            f_old = f_new
-            error_prg[i + 1] = f_new
-            k = i + 1
-            print(f'{k:3}, alpha:{alpha:.2e}, gradient:{g_norm:.2e}, phid:{phid:.2e}, phim:{phim:.2e}, f:{f_new:.2e} ')
-        # filter model prog data
-        model_prg = model_prg[:k]
-        error_prg = error_prg[:k]
-        return model_new, error_prg, model_prg
-
-    def GaussNewton_Reg_LS(self, dobs, model_init, niter, beta,
-                           alpha0=1, afac=0.5, atol=1e-6, gtol=1e-3, mu=1e-4):
-        """""
-        Gauss-Newton method
-        Line search method Amijo using directional derivative
-
-        parameter
-            dobs: data
-            model_init: initial model
-            mref : applly initial model as reference model
-            niter: max iteration number
-            beta: beta for model part
-            alpha0: initial alpha for line search
-            afac: backtracking factor
-            atol: min value for alpha
-            gtol: minimum value for dradient, stopping criteria for inversion
-            mu: parameter for directional derivative
-        """
-
-        model_old = model_init
-        # applay initial model for reference mode
-        mref = model_init
-        # get noise part
-        Wd = self.get_Wd(dobs)
-        # Initialize object function
-        r = Wd @ (self.predicted_data(model_old) - dobs)
-        phid = 0.5 * np.dot(r, r)
-        phim = 0.5 * np.dot(model_old - mref, model_old - mref)
-        f_old = phid + beta * phim
-        # Prepare array for storing error and model in progress
-        error_prg = np.zeros(niter + 1)
-        model_prg = np.zeros((niter + 1, model_init.shape[0]))
-        error_prg[0] = f_old
-        model_prg[0, :] = model_old
-
-        print(f'Gauss-Newton \n Initial phid = {phid:.2e} ,phim = {phim:.2e}, error= {f_old:.2e} ')
-        for i in range(niter):
-
-            # Jacobian
-            J = self.Japprox(model_old)
-
-            # gradient
-            g = J.T @ Wd.T @ r + beta * (model_old - mref)
-
-            # Hessian approximation
-            H = J.T @ Wd.T @ Wd @ J + beta * np.identity(len(model_old))
-
-            # model step
-            dm = np.linalg.solve(H, g)
+            J = self.Japprox(mvec_old)
+            g = J.T @ Wd.T @ rd + beta * (alphas * Ws.T @ Ws @ (mvec_old - mref)
+                                          + alphax * Wx.T @ Wx @ mvec_old)
+            # Exact line search
+            if ELS:
+                t = np.dot(g,g)/np.dot(Wd@J@g,Wd@J@g)
+#                t = (g.T@g)/(g.T@J.T@J@g)
+            else:
+                t = 1.
 
             # End inversion if gradient is smaller than tolerance
             g_norm = np.linalg.norm(g, ord=2)
@@ -606,65 +600,87 @@ class EMIP1D:
                 print(f"Inversion complete since norm of gradient is small as :{g_norm :.3e} ")
                 break
 
-            # update object function
-            alpha = alpha0
-            model_new = self.constrain_model_vector(model_old - alpha * dm)
-#            model_new = self.proj_c(model_old - alpha * dm)
-            r = Wd @ (self.predicted_data(model_new) - dobs)
-            phid = 0.5 * np.dot(r, r)
-            phim = 0.5 * np.dot(model_new - mref, model_new - mref)
-            f_new = phid + beta * phim
-
-            # Backtracking method using directional derivative Amijo
+            # Line search method Armijo using directional derivative
+            s = s0
+            dm = t*g
             directional_derivative = np.dot(g, -dm)
-            while f_new >= f_old + alpha * mu * directional_derivative:
-                # backtracking
-                alpha *= afac
-                # update object function
-                model_new = self.constrain_model_vector(model_old - alpha * dm)
-                # model_new = self.proj_c(model_old - alpha * dm)
-                r = Wd @ (self.predicted_data(model_new) - dobs)
-                phid = 0.5 * np.dot(r, r)
-                phim = 0.5 * np.dot(model_new - mref, model_new - mref)
-                f_new = phid + beta * phim
-                # Stopping criteria for backtrackinng
-                if alpha < atol:
-                    break
 
-            # Update model
-            model_old = model_new
-            model_prg[i + 1, :] = model_new
+            mvec_new = self.proj_c(mvec_old - s * dm)
+            rd = Wd @ (self.predicted_data(mvec_new) - dobs)
+            phid = 0.5 * np.dot(rd, rd)
+            rms = 0.5 * np.dot(Ws @ (mvec_new - mref), Ws @ (mvec_new - mref))
+            rmx = 0.5 * np.dot(Wx @ mvec_new, Wx @ mvec_new)
+            phim = alphas * rms + alphax * rmx
+            f_new = phid + beta * phim
+            if BLS:
+                while f_new >= f_old + s * mu * directional_derivative:
+                    s *= sfac
+                    mvec_new = self.proj_c(mvec_old - s * dm)
+                    rd = Wd @ (self.predicted_data(mvec_new) - dobs)
+                    phid = 0.5 * np.dot(rd, rd)
+                    rms = 0.5 * np.dot(Ws @ (mvec_new - mref), Ws @ (mvec_new - mref))
+                    rmx = 0.5 * np.dot(Wx @ mvec_new, Wx @ mvec_new)
+                    phim = alphas * rms + alphax * rmx
+                    f_new = phid + beta * phim
+                    if np.linalg.norm(s) < stol:
+                        break
+            mvec_old = mvec_new
+            mvec_prg[i + 1, :] = mvec_new
             f_old = f_new
             error_prg[i + 1] = f_new
             k = i + 1
-            print(f'{k:3}, alpha:{alpha:.2e}, gradient:{g_norm:.2e}, phid:{phid:.2e}, phim:{phim:.2e}, f:{f_new:.2e} ')
-        # clip progress of model and error in inversion
+            print(f'{k:3}, s:{s:.2e}, gradient:{g_norm:.2e}, phid:{phid:.2e}, phim:{phim:.2e}, f:{f_new:.2e} ')
+        # filter model prog data
+        mvec_prg = mvec_prg[:k]
         error_prg = error_prg[:k]
-        model_prg = model_prg[:k]
-        return model_new, error_prg, model_prg
+        # Save Jacobian
+        self.Jacobian = J
+        return mvec_new, error_prg, mvec_prg
 
-    def GaussNewton_smooth(self, dobs, mvec_init, niter, Wd,
-                           beta, Ws, Wx, alphas, alphax,
+    def GaussNewton_smooth(self, dobs, mvec_init, niter,
+                           beta, alphas, alphax,
                            s0=1, sfac=0.5, stol=1e-6, gtol=1e-3, mu=1e-4):
-        """""
-        Gauss-Newton method with Smooth regularization
-        Line search method Amijo using directional derivative
+        """
+        Implements the Gauss-Newton method with smooth regularization for solving an inverse problem.
 
-        parameter
-            dobs: data
-            model_init: initial model
-            mref : applly initial model as reference model
-            niter: max iteration number
-            beta: beta for model part
-            alphax : smallness
-            alphax : smoothness
-            s0: initial alpha for line search
-            sfac: backtracking factor
-            stol: min value for alpha
-            gtol: minimum value for dradient, stopping criteria for inversion
-            mu: parameter for directional derivative
+        Parameters
+        ----------
+        dobs : ndarray
+            The observed data.
+        mvec_init : ndarray
+            The initial model vector.
+        niter : int
+            The maximum number of iterations.
+        beta : float
+            The beta value for the model part.
+        alphas : float
+            The alpha values for smallness.
+        alphax : float
+            The alpha values for smoothness.
+        s0 : float
+            The initial step size for the Armijo line search.
+        sfac : float
+            The step size reduction factor for the Armijo line search.
+        stol : float
+            The step size tolerance for the Armijo line search.
+        gtol : float
+            The stopping criteria for the norm of the gradient.
+        mu : float
+            The mu parameter for the Armijo line search.
+
+        Returns
+        -------
+        mvec : ndarray
+            The final model vector.
+        eprogress : list
+            The progress of the error.
+        mprogress : list
+            The progress of the model vector.
         """
 
+        Wd = self.Wd
+        Ws = self.Ws
+        Wx = self.Wx
         mvec_old = mvec_init
         # applay initial mvec for reference mode
         mref = mvec_init
@@ -745,17 +761,23 @@ class EMIP1D:
         # clip progress of model and error in inversion
         error_prg = error_prg[:k]
         mvec_prg = mvec_prg[:k]
+        # Save Jacobian and Hessian
+        self.Jacobian = J
+        self.Hessian = H
+
         return mvec_new, error_prg, mvec_prg
 
     def get_r08_grid(self,  mr0lim, mr8lim, m_t, m_c,
-        dobs, mref, Wd,
-        beta, Ws, Wx, alphas, alphax, ngrid=20, mirgin=0.1, null_value=-1):
+        dobs, mref,
+        beta,  alphas, alphax, ngrid=20, mirgin=0.1, null_value=-1):
         # return grid of object function with respect to resistivity in high and low frequency
         # assuming IP model is cole model tau and c are fixed value.
         if self.IP_model == "pelton":
             print("use rm_grid for pelton model")
             return
-
+        Wd = self.Wd
+        Ws = self.Ws
+        Wx = self.Wx
         mr0_grid0 = (1+mirgin)*(np.min(mr0lim)) - mirgin* (np.max(mr0lim))
         mr0_grid1 = (1+mirgin)*(np.max(mr0lim)) - mirgin* (np.min(mr0lim))
         mr0_grid = np.linspace(mr0_grid0, mr0_grid1, ngrid)
@@ -766,7 +788,7 @@ class EMIP1D:
 
         for j, mr0_tmp in enumerate(mr0_grid):
             for i, mr8_tmp in enumerate(mr8_grid):
-                if mr8_tmp <= mr0_tmp:
+                if -mr0_tmp + mr8_tmp >= np.log(1-self.chgmax) and -mr0_tmp + mr8_tmp <= np.log(1-self.chgmin) :
                     mvec = np.hstack([mr0_tmp, mr8_tmp, m_t, m_c])
                     r = Wd @ (self.predicted_data(mvec) - dobs)
                     phid = 0.5 * np.dot(r, r)
@@ -781,14 +803,16 @@ class EMIP1D:
         return mr0_grid, mr8_grid, r08_grid
 
     def get_rm_grid(self,  mrlim, mmlim, m_t, m_c,
-        dobs, mref, Wd,
-        beta, Ws, Wx, alphas, alphax, ngrid=20, mirgin=0.1):
+        dobs, mref,
+        beta, alphas, alphax, ngrid=20, mirgin=0.1):
         # return grid of object function with respect to resistivity in high and low frequency
         # assuming IP model is pelton model tau and c are fixed value.
         if self.IP_model == "cole":
             print("use r08_grid for cole model")
             return
-
+        Wd = self.Wd
+        Ws = self.Ws
+        Wx = self.Wx
         mr_grid0 = (1+mirgin)*(np.min(mrlim)) - mirgin* (np.max(mrlim))
         mr_grid1 = (1+mirgin)*(np.max(mrlim)) - mirgin* (np.min(mrlim))
         mr_grid = np.linspace(mr_grid0, mr_grid1, ngrid)
@@ -811,11 +835,13 @@ class EMIP1D:
 
 
     def get_tc_grid(self, m_r, m_m, mtlim, mclim,
-        dobs, mref, Wd,
-        beta, Ws, Wx, alphas, alphax, ngrid=20, mirgin=0.1, null_value=-1):
+        dobs, mref,
+        beta, alphas, alphax, ngrid=20, mirgin=0.1, null_value=-1):
         # return grid of object function with respect to resistivity in high and low frequency
         # assuming IP model is cole model tau and c are fixed value.
-
+        Wd = self.Wd
+        Ws = self.Ws
+        Wx = self.Wx
         mt_grid0 = (1+mirgin)*(np.min(mtlim)) - mirgin* (np.max(mtlim))
         mt_grid1 = (1+mirgin)*(np.max(mtlim)) - mirgin* (np.min(mtlim))
         mt_grid = np.linspace(mt_grid0, mt_grid1, ngrid)
@@ -836,7 +862,7 @@ class EMIP1D:
         return tc_grid, mt_grid, mc_grid
 
 
-    def plot_IP_par(self,mvec, label="", color="orange", linewidth=1.0,ax=None):
+    def plot_IP_par(self,mvec,color="orange",  label="",  linewidth=1.0,ax=None):
         """"
         Return four plots about four IP parameters on given ax.
         mvec: model vector
@@ -851,78 +877,92 @@ class EMIP1D:
         model = self.get_ip_model(mvec)
 
         # plot_model_m(model_base["depth"], model_ip["res"], ax[0], "resistivity","k")
-        self.plot_model(model["res"], ax[0], label, color=color, linewidth=linewidth)
+        self.plot_model(model["res"], ax[0], color, label=label, linewidth=linewidth)
         if self.IP_model == "cole":
-            self.plot_model(1 - model["cond_0"] / model["cond_8"], ax[1], label, color=color, linewidth=linewidth)
+            self.plot_model(1 - model["cond_0"] / model["cond_8"], ax[1], color, label=label, linewidth=linewidth)
         else:
-            self.plot_model(model["m"], ax[1], label, color=color, linewidth=linewidth)
+            self.plot_model(model["m"], ax[1],  color, label=label, linewidth=linewidth)
 
-        self.plot_model(model["tau"], ax[2], label, color=color, linewidth=linewidth)
+        self.plot_model(model["tau"], ax[2],  color, label=label, linewidth=linewidth)
 
-        self.plot_model(model["c"]  , ax[3], label, color=color, linewidth=linewidth)
+        self.plot_model(model["c"]  , ax[3],  color, label=label, linewidth=linewidth)
 
         ax[0].set_title("model_resistivity(ohm-m)")
         ax[1].set_title("model_changeability")
-        ax[2].set_title("model_timeconstant(sec)")
-        ax[3].set_title("model_RelaxationConstant")
+        ax[2].set_title("model_time_constant(sec)")
+        ax[3].set_title("model_exponent_c")
 
         return ax
 
-    def plot_psuedolog(self, x, yinp, ax=None, color="orange", label="", a=1e-4, b=0.2):
-        if ax is None:
-            fig, ax = plt.subplots(1, 1)
-
-        ny = yinp.shape[0]
-        y = np.zeros_like(yinp)
-
-        # Converting Psuedolog
-        for i in range(ny):
-            if abs(yinp[i]) >= a:
-                y[i] = np.sign(yinp[i]) * (np.log10(abs(yinp[i] / a)) + b)
-            else:
-                y[i] = yinp[i] / a * b
-        posmax = np.max(yinp)
-        negmax = np.max(-yinp)
-        # Ensure YTick and YTickLabels have the same length
-
-        if negmax > 0:
-            if negmax <= a:
-                negticks = -b
-                neglabels = -a
-            else:
-                n_negtick= int(np.ceil(np.log10(negmax/a)+1))
-                negticks = -b - np.arange(n_negtick-1,-1,-1)
-                negmaxlogint = int( np.log10(negmax))
-                neglabels = -np.logspace(negmaxlogint,np.log10(a),  n_negtick)
-        else:
-            negticks  = []
-            neglabels = []
-
-        posmaxlogint = int( np.log10(posmax)+1)
-        n_postick= int(np.ceil(np.log10(posmax/a)+1))
-        posticks = b + np.arange(n_postick)
-        poslabels = np.logspace(np.log10(a), posmaxlogint, n_postick)
-        ticks  = np.hstack(( negticks, [0], posticks))
-        labels = np.hstack((neglabels, [0], poslabels))
-
-        # Plot figure
-        ax.semilogx(x, y, color=color, label=label)
-        ax.set_xlim([min(x), max(x)])
-        ax.set_ylim([min(ticks), max(ticks)])
-        ax.set_yticks(ticks)
-        ax.set_yticklabels(labels)
-        ax.grid(True)
-
-        return ax
 
 class psuedolog():
+    """
+    A class used to create pseudolog plots.
+    ...
+
+    Attributes
+    ----------
+    posmax : float
+        The maximum positive value for the pseudolog.
+    negmax : float
+        The maximum negative value for the pseudolog.
+    a : float
+        The value used to scale the pseudolog.
+    b : float
+        The value used to shift the p
+        seudolog.
+
+    Methods
+    -------
+    pl_plot(x, yinp, ax=None, color="orange", label="pl_plot"):
+        Converts the input yinp into a pseudolog and plots it against x on a semilogx plot.
+    pl_scatter(x, yinp, ax=None, marker="o",s=5,color="orange", label="pl_plot"):
+        Converts the input yinp into a pseudolog and creates a scatter plot against x on a semilogx plot.
+    pl_axes(ax=None):
+        Adjusts the y-axis of the plot to be suitable for pseudolog data.
+    """
     def __init__(self, posmax, negmax, a, b):
+        """
+        Constructs all the necessary attributes for the psuedolog object.
+
+        Parameters
+        ----------
+            posmax : float
+                The maximum positive value for the pseudolog.
+            negmax : float
+                The maximum negative value for the pseudolog.
+            a : float
+                The value used to scale the pseudolog.
+            b : float
+                The value used to shift the pseudolog.
+        """
         self.posmax = posmax
         self.negmax = negmax
         self.a = a
         self.b = b
 
     def pl_plot(self, x, yinp, ax=None, color="orange", label="pl_plot"):
+        """
+        Converts the input yinp into a pseudolog and plots it against x on a semilogx plot.
+
+        Parameters
+        ----------
+            x : ndarray
+                The x values for the plot.
+            yinp : ndarray
+                The y values to be converted into a pseudolog.
+            ax : AxesSubplot, optional
+                The axes upon which to plot. If None, a new plot is created.
+            color : str, optional
+                The color of the plot.
+            label : str, optional
+                The label for the plot.
+
+        Returns
+        -------
+            ax : AxesSubplot
+                The axes with the plot.
+        """
         if ax is None:
             fig, ax = plt.subplots(1, 1)
         a = self.a
@@ -941,6 +981,31 @@ class psuedolog():
         return ax
 
     def pl_scatter(self, x, yinp, ax=None, marker="o",s=5,color="orange", label="pl_plot"):
+        """
+        Converts the input yinp into a pseudolog and creates a scatter plot against x on a semilogx plot.
+
+        Parameters
+        ----------
+            x : ndarray
+                The x values for the scatter plot.
+            yinp : ndarray
+                The y values to be converted into a pseudolog.
+            ax : AxesSubplot, optional
+                The axes upon which to plot. If None, a new plot is created.
+            marker : str, optional
+                The marker style for the scatter plot.
+            s : int, optional
+                The size of the markers for the scatter plot.
+            color : str, optional
+                The color of the scatter plot.
+            label : str, optional
+                The label for the scatter plot.
+
+        Returns
+        -------
+            ax : AxesSubplot
+                The axes with the scatter plot.
+        """
         if ax is None:
             fig, ax = plt.subplots(1, 1)
         a = self.a
@@ -961,6 +1026,19 @@ class psuedolog():
 
 
     def pl_axes(self,ax=None):
+        """
+        Adjusts the y-axis of the plot to be suitable for pseudolog data.
+
+        Parameters
+        ----------
+            ax : AxesSubplot, optional
+                The axes to be adjusted. If None, a new plot is created.
+
+        Returns
+        -------
+            ax : AxesSubplot
+                The axes with the adjusted y-axis.
+        """
         posmax = self.posmax
         negmax = self.negmax
         a = self.a
@@ -992,53 +1070,4 @@ class psuedolog():
         ax.grid(True)
 
         return ax
-
-#
-# t = np.logspace(-8,-2, 121)
-# tstrt = 1e-4
-# tend = 1e-2
-# tindex = (t >= tstrt) & (t <= tend)
-# tplot = t[tindex]*1e3
-#
-# res_air = 2e14
-# res_sea = 1/3
-# nlayers = 1
-# btm_fix= True
-# res_btm = 1
-# layer_thicknesses = 40.
-# seabed_depth = 1000.1
-# depth = np.hstack([np.r_[0],seabed_depth+layer_thicknesses * np.arange(nlayers+1)])
-# model_base = {
-#     'src':  [1.75,1.75,-1.75,1.75,1000, 1000],
-#     'rec': [0,0,1000,0,90],
-#     'depth': depth,
-#     'freqtime': t ,
-#     'signal': 0,
-#     'mrec' : True,
-#     'verb': 0
-# }
-#
-# EMIP =  EMIP1D(IP_model="pelton", model_base=model_base,
-#     res_air=res_air, res_sea=res_sea, nlayers=nlayers,tindex=tindex,
-#                btm_fix=btm_fix,res_btm=res_btm)
-#
-# res = 0.2
-# mvec_r = np.log(res)
-# chg = 0.0
-# mvec_m = chg
-# tau=1e-3
-# mvec_t = np.log(tau)
-# mvec_c = 0.5
-# mvec_ref = np.hstack([mvec_r, mvec_m, mvec_t, mvec_c])
-# data_ref = EMIP.predicted_data(mvec_ref)
-#
-# chg1 = 0.1
-# mvec_m1 = np.hstack([mvec_r, chg1, mvec_t, mvec_c])
-# data_m1 = EMIP.predicted_data(mvec_m1)
-# chg2 = 0.3
-# mvec_m2 = np.hstack([mvec_r, chg2, mvec_t, mvec_c])
-# data_m2 = EMIP.predicted_data(mvec_m2)
-# chg3 = 0.6
-# mvec_m3 = np.hstack([mvec_r, chg3, mvec_t, mvec_c])
-# data_m3 = EMIP.predicted_data(mvec_m3)
 
