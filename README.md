@@ -52,9 +52,10 @@ Notebooks about multilayer inversion.
 ## References
 empymod  
 
-Open-source full 3D electromagnetic modeller for 1D VTI media 
-https://empymod.emsig.xyz/en/stable/gallery/tdomain/cole_cole_ip.html#sphx-glr-gallery-tdomain-cole-cole-ip-py   
-"TDEM survey on Deep seamassive sulfide and IP impacts on data"
+Open-source full 3D electromagnetic modeller for 1D VTI media \
+https://empymod.emsig.xyz/en/stable/gallery/tdomain/cole_cole_ip.html#sphx-glr-gallery-tdomain-cole-cole-ip-py  \
+
+"TDEM survey on Deep seamassive sulfide and IP impacts on data" \
 K. Nakayama,(2019), Application of Time-Domain Electromagnetic Survey for Seafloor Polymetallic Sulphides in the Okinawa Trough  
 https://www.earthdoc.org/content/papers/10.3997/2214-4609.201902383
 
